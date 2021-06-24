@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net.NetworkInformation;
-using System.Timers;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using NetworkDropLogger.Configuration;
 using NetworkDropLogger.Entities;
@@ -12,43 +13,45 @@ namespace NetworkDropLogger.Services
         public event EventHandler<StateChangedEventArgs> StateChanged;
 
         private readonly DetectorConfiguration _config;
-        
-        private readonly Timer _timer;
-        private ConnectionState _connectionState;
-        
+
         public DetectorService(IOptions<DetectorConfiguration> config)
         {
             _config = config.Value;
-            
-            _timer = new(_config.DelayBetweenPings);
-            _timer.Elapsed += OnTimerElapsed;
-        }
-        
-        public void Start()
-        {
-            _timer.Start();
         }
 
-        private void OnTimerElapsed(object sender, ElapsedEventArgs e)
+        public async Task RunAsync(CancellationToken stoppingToken)
         {
-            var newConnectionState = Check();
-            if (_connectionState != newConnectionState)
+            var currentConnectionState = ConnectionState.Undefined;
+            while (!stoppingToken.IsCancellationRequested)
             {
-                var eventArgs = new StateChangedEventArgs
+                await Task.Delay(_config.DelayBetweenPings, stoppingToken);
+                var newConnectionState = await CheckAsync();
+                if (currentConnectionState != newConnectionState)
                 {
-                    Old = _connectionState,
-                    New = newConnectionState
-                };
-                _connectionState = newConnectionState;
-                StateChanged.Invoke(this, eventArgs);
+                    var eventArgs = new StateChangedEventArgs
+                    {
+                        Old = currentConnectionState,
+                        New = newConnectionState
+                    };
+                    currentConnectionState = newConnectionState;
+                    StateChanged.Invoke(this, eventArgs);
+                }
             }
         }
 
-        private ConnectionState Check()
+        private async Task<ConnectionState> CheckAsync()
         {
-            return new Ping().Send(_config.PingAddress, _config.PingTimeout).Status == IPStatus.Success
-                ? ConnectionState.Connected 
-                : ConnectionState.Disconnected;
+            try
+            {
+                var response = await new Ping().SendPingAsync(_config.PingAddress, _config.PingTimeout);
+                return response.Status == IPStatus.Success
+                    ? ConnectionState.Connected
+                    : ConnectionState.Disconnected;
+            }
+            catch
+            {
+                return ConnectionState.Disconnected;
+            }
         }
     }
 }

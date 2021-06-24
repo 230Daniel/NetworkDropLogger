@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Threading.Tasks;
+using Humanizer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NetworkDropLogger.Configuration;
@@ -13,7 +14,8 @@ namespace NetworkDropLogger.Services
         private readonly ILogger<LoggerService> _logger;
 
         private readonly StreamWriter _fileStream;
-        
+        private DateTime? _downTime;
+
         public LoggerService(ILogger<LoggerService> logger, IOptions<DetectorConfiguration> detectorConfig, IOptions<LoggerConfiguration> config)
         {
             _logger = logger;
@@ -27,7 +29,23 @@ namespace NetworkDropLogger.Services
         public void OnStateChanged(object sender, StateChangedEventArgs e)
         {
             _logger.LogInformation("State changed from {Old} to {New}", e.Old, e.New);
-            _fileStream.WriteLine($"{GetTime()} | State changed from {e.Old} to {e.New}");
+            if (e.New == ConnectionState.Disconnected)
+            {
+                _downTime = DateTime.Now;
+                _fileStream.WriteLine($"{GetTime()} | Disconnected");
+            }
+
+            if (e.New == ConnectionState.Connected)
+            {
+                if(_downTime is null)
+                    _fileStream.WriteLine($"{GetTime()} | Connected");
+                else
+                {
+                    var downFor = DateTime.Now - _downTime.Value;
+                    _fileStream.WriteLine($"{GetTime()} | Connected, was disconnected for {downFor.Humanize(2)}");
+                }
+                    
+            }
         }
 
         public async Task StopAsync()

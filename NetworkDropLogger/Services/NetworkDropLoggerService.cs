@@ -18,7 +18,7 @@ namespace NetworkDropLogger.Services
         public Task StartAsync(CancellationToken cancellationToken)
         {
             _detector.StateChanged += _logger.OnStateChanged;
-            _detector.Start();
+            _ = _detector.RunAsync(cancellationToken);
             return Task.CompletedTask;
         }
 
